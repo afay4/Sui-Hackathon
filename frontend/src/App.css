@@ -50,6 +50,38 @@ body {
   margin-top: 0.5rem;
 }
 
+/* Yeni: logo ile başlığı yan yana yerleştirme */
+.header .header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.logo-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 6px; /* opsiyonel */
+}
+
+.title-block h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.title-block .tagline {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
 /* Main Content */
 .main-content {
   max-width: 1200px;

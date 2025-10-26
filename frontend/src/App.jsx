@@ -6,6 +6,7 @@ import './App.css'
 import SellerReview from './SellerReview'
 import QRScanner from './QRScanner'
 import { PACKAGE_ID } from './config' // Kontrat ID'sini import et
+import logo from './assets/logo.png'
 
 // Sui Client'ı kur
 // main.jsx dosyanızda 'testnet' olarak belirlediğiniz için burayı da güncelledim.
@@ -104,8 +105,13 @@ function App() {
       {/* Header */}
       <header className="header">
         <div className="header-content">
-          <h1>🔗 NFT Payment</h1>
-          <p className="tagline">Uygun Fiyatlı & Değerli Ürünler - Blockchain ile Güvence</p>
+          <div className="logo-title">
+            <img src={logo} alt="NFT Payment Product Logo" className="logo" />
+            <div className="title-block">
+              <h1>🔗 NFT Payment Product</h1>
+              <p className="tagline">Uygun Fiyatlı & Değerli Ürünler - Blockchain ile Güvence</p>
+            </div>
+          </div>
           <ConnectButton />
         </div>
       </header>
