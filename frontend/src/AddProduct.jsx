@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import './AddProduct.css'
+import { useSignAndExecuteTransaction } from '@mysten/dapp-kit'
+import { Transaction } from '@mysten/sui/transactions'
+import { PACKAGE_ID } from './config.js' // .js uzantısını ekledim (konsol çıktınızda böyle görünüyordu)
 
-function AddProduct({ onClose, onAddProduct, currentAddress }) {
+function AddProduct({ onClose, onAddProductSuccess, currentAddress }) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    price: '',
+    price: '', // Fiyatı string olarak alacağız
     category: 'Elektronik',
     imageUrl: ''
   })
+  const [isLoading, setIsLoading] = useState(false);
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction()
 
   const categories = [
     'Elektronik',
@@ -29,36 +34,66 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setIsLoading(true);
 
     // Validasyon
     if (!formData.name || !formData.price) {
       alert('Lütfen ürün adı ve fiyat giriniz!')
+      setIsLoading(false);
       return
     }
-
-    if (parseFloat(formData.price) <= 0) {
+    
+    const priceAsNumber = parseFloat(formData.price)
+    if (priceAsNumber <= 0) {
       alert('Fiyat 0\'dan büyük olmalıdır!')
+      setIsLoading(false);
       return
     }
 
-    // Yeni ürün oluştur
-    const newProduct = {
-      id: Date.now(),
-      name: formData.name,
-      description: formData.description || 'Açıklama eklenmemiş',
-      price: formData.price + '₺',
-      category: formData.category,
-      image: formData.imageUrl || `https://via.placeholder.com/300x200?text=${encodeURIComponent(formData.name)}`,
-      seller: currentAddress,
-      isAuthentic: true,
-      ownershipHistory: [currentAddress]
-    }
+    const priceAsU64 = Math.floor(priceAsNumber);
 
-    onAddProduct(newProduct)
-    alert('Ürün başarıyla eklendi! 🎉')
-    onClose()
+    const txb = new Transaction()
+    
+    // !!! HATA BURADAYDI !!!
+    // useSignAndExecuteTransaction hook'u sender'ı otomatik ekler.
+    // Bu satırı manuel olarak eklemek hataya neden oluyor.
+    // txb.setSender(currentAddress) // <-- BU SATIRI SİLİN
+
+    console.log(PACKAGE_ID)
+    txb.moveCall({
+      target: `${PACKAGE_ID}::product_nft::mint_product_nft`,
+      arguments: [
+        txb.pure.string(formData.name),
+        txb.pure.string(formData.description || 'Açıklama eklenmemiş'),
+        txb.pure.string(formData.imageUrl || `https://via.placeholder.com/300x200?text=${encodeURIComponent(formData.name)}`),
+        txb.pure.u64(priceAsU64),
+        txb.pure.string(formData.category),
+      ],
+    })
+
+    
+
+    await signAndExecuteTransaction(
+      {
+        transaction: txb,
+      },
+      {
+        onSuccess: (result) => {
+          setIsLoading(false);
+          console.log('NFT Minted:', result);
+          alert('Ürün başarıyla eklendi ve NFT oluşturuldu! 🎉');
+          onAddProductSuccess();
+          onClose();
+        },
+        onError: (error) => {
+          setIsLoading(false);
+          console.error(error);
+          alert('NFT oluşturulurken bir hata oluştu: ' + error.message);
+        },
+      }
+    )
   }
 
   return (
@@ -70,6 +105,7 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
         <p className="add-product-subtitle">Ürününüz otomatik olarak NFT'ye dönüştürülecek</p>
 
         <form onSubmit={handleSubmit} className="add-product-form">
+          {/* Formun geri kalanı aynı... */}
           {/* Ürün Adı */}
           <div className="form-group">
             <label htmlFor="name">
@@ -83,6 +119,7 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
               onChange={handleChange}
               placeholder="Örn: iPhone 14 Pro Max"
               required
+              disabled={isLoading}
             />
           </div>
 
@@ -96,6 +133,7 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
               onChange={handleChange}
               placeholder="Ürün hakkında detaylı bilgi..."
               rows="4"
+              disabled={isLoading}
             />
           </div>
 
@@ -110,10 +148,11 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
               name="price"
               value={formData.price}
               onChange={handleChange}
-              placeholder="0"
+              placeholder="15000"
               min="0"
               step="0.01"
               required
+              disabled={isLoading}
             />
           </div>
 
@@ -125,6 +164,7 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
               name="category"
               value={formData.category}
               onChange={handleChange}
+              disabled={isLoading}
             >
               {categories.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
@@ -144,6 +184,7 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
               value={formData.imageUrl}
               onChange={handleChange}
               placeholder="https://example.com/image.jpg"
+              disabled={isLoading}
             />
             <small className="form-hint">
               Boş bırakırsanız otomatik placeholder oluşturulur
@@ -162,11 +203,11 @@ function AddProduct({ onClose, onAddProduct, currentAddress }) {
 
           {/* Butonlar */}
           <div className="form-actions">
-            <button type="button" className="btn-cancel" onClick={onClose}>
+            <button type="button" className="btn-cancel" onClick={onClose} disabled={isLoading}>
               İptal
             </button>
-            <button type="submit" className="btn-submit">
-              🚀 Ürünü Ekle ve NFT Oluştur
+            <button type="submit" className="btn-submit" disabled={isLoading}>
+              {isLoading ? 'Oluşturuluyor...' : '🚀 Ürünü Ekle ve NFT Oluştur'}
             </button>
           </div>
         </form>

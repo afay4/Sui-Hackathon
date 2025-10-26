@@ -1,72 +1,105 @@
 import AddProduct from './AddProduct'
 import { ConnectButton, useCurrentAccount } from '@mysten/dapp-kit'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client' // SuiClient eklendi
 import './App.css'
 import SellerReview from './SellerReview'
 import QRScanner from './QRScanner'
+import { PACKAGE_ID } from './config' // Kontrat ID'sini import et
 
+// Sui Client'ı kur
+// main.jsx dosyanızda 'testnet' olarak belirlediğiniz için burayı da güncelledim.
+const client = new SuiClient({ url: getFullnodeUrl('testnet') }) // 'devnet' -> 'testnet'
 
 function App() {
   const account = useCurrentAccount()
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      name: 'iPhone 13 Pro',
-      price: '15000₺',
-      category: 'Elektronik',
-      image: 'https://via.placeholder.com/300x200?text=iPhone+13+Pro',
-      seller: '0x123...abc',
-      isAuthentic: true,
-      ownershipHistory: ['0x123...abc']
-    },
-    {
-      id: 2,
-      name: 'Nike Air Jordan',
-      price: '3500₺',
-      category: 'Ayakkabı',
-      image: 'https://via.placeholder.com/300x200?text=Nike+Air+Jordan',
-      seller: '0x456...def',
-      isAuthentic: true,
-      ownershipHistory: ['0x789...ghi', '0x456...def']
-    },
-    {
-      id: 3,
-      name: 'MacBook Pro M2',
-      price: '45000₺',
-      category: 'Elektronik',
-      image: 'https://via.placeholder.com/300x200?text=MacBook+Pro',
-      seller: '0x789...xyz',
-      isAuthentic: true,
-      ownershipHistory: ['0x789...xyz']
-    }
-  ])
+  const [products, setProducts] = useState([]) // Başlangıçta boş
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false) // Yükleme durumu
 
   const [selectedProduct, setSelectedProduct] = useState(null)
-const [showSellerReview, setShowSellerReview] = useState(false)
-const [selectedSeller, setSelectedSeller] = useState(null)
- const [showAddProduct, setShowAddProduct] = useState(false)
-const [showQRScanner, setShowQRScanner] = useState(false)
-const [qrMode, setQrMode] = useState('scan')
-const [qrProductData, setQrProductData] = useState(null)
-const handleAddProduct = (newProduct) => {
-  setProducts([newProduct, ...products])
-}
-const handleQRScan = (data) => {
-  alert('QR Kod başarıyla okundu!')
-  setShowQRScanner(false)
-  
-  const foundProduct = products.find(p => p.id === data.id)
-  if (foundProduct) {
-    setSelectedProduct(foundProduct)
-  }
-}
+  const [showSellerReview, setShowSellerReview] = useState(false)
+  const [selectedSeller, setSelectedSeller] = useState(null)
+  const [showAddProduct, setShowAddProduct] = useState(false)
+  const [showQRScanner, setShowQRScanner] = useState(false)
+  const [qrMode, setQrMode] = useState('scan')
+  const [qrProductData, setQrProductData] = useState(null)
 
-const openQRScanner = (mode, product = null) => {
-  setQrMode(mode)
-  setQrProductData(product)
-  setShowQRScanner(true)
-}
- return (
+  // Ürünleri (NFT'leri) blockchain'den çeken fonksiyon
+  const fetchProducts = useCallback(async () => {
+    if (!account) return
+
+    setIsLoadingProducts(true)
+    try {
+      const objects = await client.getOwnedObjects({
+        owner: account.address,
+        filter: {
+          StructType: `${PACKAGE_ID}::product_nft::ProductNFT`
+        },
+        options: {
+          showContent: true,
+          showType: true,
+          showDisplay: true,
+        }
+      })
+      
+      console.log("Fetched Objects:", objects);
+
+      const fetchedProducts = objects.data
+        .filter(obj => obj.data && obj.data.content && obj.data.content.fields)
+        .map(obj => {
+          const fields = obj.data.content.fields
+          const price = fields.current_price ? `${fields.current_price}₺` : 'Fiyat Yok'
+          
+          return {
+            id: fields.id.id,
+            name: fields.name,
+            price: price,
+            category: fields.category,
+            image: fields.image_url,
+            seller: fields.ownership_history[fields.ownership_history.length - 1],
+            isAuthentic: fields.is_authentic,
+            ownershipHistory: fields.ownership_history,
+            objectId: obj.data.objectId 
+          }
+        })
+
+      setProducts(fetchedProducts.reverse())
+    } catch (error) {
+      console.error('Ürünler getirilirken hata oluştu:', error)
+    } finally {
+      setIsLoadingProducts(false)
+    }
+  }, [account])
+
+  // Cüzdan bağlandığında ürünleri çek
+  useEffect(() => {
+    if (account) {
+      fetchProducts()
+    } else {
+      setProducts([])
+    }
+  }, [account, fetchProducts])
+
+  
+  const handleQRScan = (data) => {
+    alert('QR Kod başarıyla okundu!')
+    setShowQRScanner(false)
+    
+    const foundProduct = products.find(p => p.objectId === data.id)
+    if (foundProduct) {
+      setSelectedProduct(foundProduct)
+    } else {
+      alert("Bu ürün sizin cüzdanınızda bulunamadı.")
+    }
+  }
+
+  const openQRScanner = (mode, product = null) => {
+    setQrMode(mode)
+    setQrProductData(product ? { id: product.objectId } : null) 
+    setShowQRScanner(true)
+  }
+
+  return (
     <div className="app">
       {/* Header */}
       <header className="header">
@@ -104,60 +137,77 @@ const openQRScanner = (mode, product = null) => {
         ) : (
           <div className="products-section">
             <div className="section-header">
-  <div>
-    <h2>🛍️ Ürünler</h2>
-  </div>
-  <div style={{display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap'}}>
-    <p className="wallet-info">
-      Bağlı Cüzdan: <code>{account.address.slice(0, 6)}...{account.address.slice(-4)}</code>
-    </p>
-    <button 
-      className="btn-primary"
-      style={{padding: '0.6rem 1.2rem', width: 'auto'}}
-      onClick={() => setShowAddProduct(true)}
-    >
-    
-  ➕ Ürün Ekle
-</button>
-<button 
-  className="btn-primary"
-  style={{padding: '0.6rem 1.2rem', width: 'auto', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'}}
-  onClick={() => openQRScanner('scan')}
->
-  📷 QR Oku
-</button>
-  </div>
-</div>
-
-            <div className="products-grid">
-              {products.map(product => (
-                <div key={product.id} className="product-card">
-                  <img src={product.image} alt={product.name} className="product-image" />
-                  <div className="product-info">
-                    <span className="product-category">{product.category}</span>
-                    <h3>{product.name}</h3>
-                    <p className="product-price">{product.price}</p>
-                    
-                    <div className="product-meta">
-                      <span className="authentic-badge">
-                        {product.isAuthentic ? '✓ Orijinal' : '⚠ Doğrulanmamış'}
-                      </span>
-                      <span className="owner-count">
-                        👤 {product.ownershipHistory.length} Sahip
-                      </span>
-                    </div>
-
-                    <button 
-                      className="btn-primary"
-                      onClick={() => setSelectedProduct(product)}
-                    >
-                      Detayları Gör
-                    </button>
-                  </div>
-                </div>
+              <div>
+                <h2>🛍️ Cüzdanımdaki Ürünler</h2>
+              </div>
+              <div style={{display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap'}}>
+                <p className="wallet-info">
+                  Bağlı Cüzdan: <code>{account.address.slice(0, 6)}...{account.address.slice(-4)}</code>
+                </p>
+                <button 
+                  className="btn-primary"
+                  style={{padding: '0.6rem 1.2rem', width: 'auto'}}
+                  onClick={() => setShowAddProduct(true)}
+                >
                 
-              ))}
+              ➕ Ürün Ekle
+            </button>
+            <button 
+              className="btn-primary"
+              style={{padding: '0.6rem 1.2rem', width: 'auto', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)'}}
+              onClick={() => openQRScanner('scan')}
+            >
+              📷 QR Oku
+            </button>
+            <button 
+              className="btn-primary"
+              style={{padding: '0.6rem 0.8rem', width: 'auto', backgroundColor: '#555'}}
+              onClick={fetchProducts}
+              disabled={isLoadingProducts}
+            >
+              {isLoadingProducts ? 'Yenileniyor...' : '🔄 Yenile'}
+            </button>
+              </div>
             </div>
+
+            {isLoadingProducts ? (
+              <div className="loading-products" style={{padding: '2rem', textAlign: 'center'}}>Ürünler yükleniyor...</div>
+            ) : products.length === 0 ? (
+              <div className="connect-prompt" style={{minHeight: '200px', justifyContent: 'center'}}>
+                <p>Bu cüzdanda hiç ürün NFT'si bulunamadı.</p>
+                <p>Yeni bir ürün ekleyerek başlayabilirsiniz!</p>
+              </div>
+            ) : (
+              <div className="products-grid">
+                {products.map(product => (
+                  <div key={product.id} className="product-card">
+                    <img src={product.image} alt={product.name} className="product-image" />
+                    <div className="product-info">
+                      <span className="product-category">{product.category}</span>
+                      <h3>{product.name}</h3>
+                      <p className="product-price">{product.price}</p>
+                      
+                      <div className="product-meta">
+                        <span className="authentic-badge">
+                          {product.isAuthentic ? '✓ Orijinal' : '⚠ Doğrulanmamış'}
+                        </span>
+                        <span className="owner-count">
+                          👤 {product.ownershipHistory.length} Sahip
+                        </span>
+                      </div>
+
+                      <button 
+                        className="btn-primary"
+                        onClick={() => setSelectedProduct(product)}
+                      >
+                        Detayları Gör
+                      </button>
+                    </div>
+                  </div>
+                  
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -182,25 +232,29 @@ const openQRScanner = (mode, product = null) => {
               </div>
               
               <div className="detail-row">
-                <span className="label">Satıcı:</span>
-                <span className="value">{selectedProduct.seller}</span>
+                <span className="label">Mevcut Sahip:</span>
+                <span className="value" style={{wordBreak: 'break-all'}}><code>{selectedProduct.seller}</code></span>
               </div>
               <button 
-  className="btn-primary" 
-  style={{marginTop: '1rem'}}
-  onClick={() => {
-    setSelectedSeller(selectedProduct.seller)
-    setShowSellerReview(true)
-    setSelectedProduct(null)
-  }}
->
-  👤 Satıcı Profilini Gör
-</button>
+                className="btn-primary" 
+                style={{marginTop: '1rem'}}
+                onClick={() => {
+                  setSelectedSeller(selectedProduct.seller)
+                  setShowSellerReview(true)
+                  setSelectedProduct(null)
+                }}
+              >
+                👤 Satıcı Profilini Gör
+              </button>
               <div className="detail-row">
                 <span className="label">Durum:</span>
                 <span className="value">
                   {selectedProduct.isAuthentic ? '✅ Orijinal NFT' : '⚠️ Doğrulanmamış'}
                 </span>
+              </div>
+              <div className="detail-row">
+                <span className="label">NFT Object ID:</span>
+                <span className="value" style={{wordBreak: 'break-all'}}><code>{selectedProduct.objectId}</code></span>
               </div>
             </div>
 
@@ -210,27 +264,30 @@ const openQRScanner = (mode, product = null) => {
                 {selectedProduct.ownershipHistory.map((owner, index) => (
                   <div key={index} className="history-item">
                     <span className="history-number">#{selectedProduct.ownershipHistory.length - index}</span>
-                    <code>{owner}</code>
+                    <code style={{wordBreak: 'break-all'}}>{owner}</code>
+                    {index === 0 && (
+                      <span className="current-badge" style={{backgroundColor: '#666'}}>Yaratıcı</span>
+                    )}
                     {index === selectedProduct.ownershipHistory.length - 1 && (
-                      <span className="current-badge">Mevcut</span>
+                      <span className="current-badge">Mevcut Sahip</span>
                     )}
                   </div>
                 ))}
               </div>
             </div>
-<button 
+            <button 
               className="btn-primary"
               style={{background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', marginBottom: '1rem'}}
               onClick={() => openQRScanner('generate', selectedProduct)}
             >
               🎯 QR Kod Oluştur
             </button>
-            <button className="btn-buy">Satın Al</button>
+            <button className="btn-buy" onClick={() => alert('Satın alma fonksiyonu henüz eklenmedi.')}>Satın Al</button>
             
           </div>
         </div>
       )}
-  {/* Seller Review Modal */}
+      {/* Seller Review Modal */}
       {showSellerReview && selectedSeller && (
         <SellerReview 
           seller={selectedSeller} 
@@ -241,7 +298,7 @@ const openQRScanner = (mode, product = null) => {
       {showAddProduct && (
         <AddProduct 
           onClose={() => setShowAddProduct(false)}
-          onAddProduct={handleAddProduct}
+          onAddProductSuccess={fetchProducts}
           currentAddress={account.address}
         />
       )}
